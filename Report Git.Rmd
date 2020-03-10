@@ -45,7 +45,7 @@ colnames(exx) = c("Quarters_ended", "Sales")
 write.csv(exx, "exxon.csv")
 
 
-wal <- read_csv("walmart", 
+wal <- read_csv("walmart.csv", 
                 col_types = cols(Quarters_ended = col_character(), 
                                  X1 = col_skip()))
 
@@ -55,7 +55,7 @@ wal_d <- as.character(wal$Quarters_ended) %>%
 wal <- mutate(wal, Quarters_ended = wal_d) %>%
         arrange(Quarters_ended)
 
-amz <- read_csv("amazon", 
+amz <- read_csv("amazon.csv", 
                 col_types = cols(Quarters_ended = col_character(), 
                                  X1 = col_skip()))
 amz_d <- as.character(amz$Quarters_ended) %>%
@@ -64,7 +64,7 @@ amz_d <- as.character(amz$Quarters_ended) %>%
 amz <- mutate(amz, Quarters_ended = amz_d) %>%
   arrange(Quarters_ended)
 
-exx <- read_csv("exxon", 
+exx <- read_csv("exxon.csv", 
                 col_types = cols(Quarters_ended = col_character(), 
                                  X1 = col_skip()))
 exx_d <- as.character(exx$Quarters_ended) %>%
