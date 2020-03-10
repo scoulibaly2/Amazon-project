@@ -1,0 +1,346 @@
+---
+title: 'Amazon: Net Sales Forecasting'
+author: "Siata Coulibaly"
+date: "1/14/2020"
+output: 
+  html_document:
+    toc: true
+    number_sections: true
+---
+
+
+# Introduction
+
+A time series is a series of data points indexed in time order. Most commonly, a time series is a sequence taken at successive equally spaced points in time. Thus, it is a sequence of discrete-time data. Time series analysis is a statistical technique that deals with time series data, or trend analysis. In this project, we will use the Amazon financial statement data with approximately all information about their income statements for the last five years in terms of quarters. The third quarter of this year was not included, but will probably be publicly available by the end of our analysis. In the following, we will explore the trend of the net sales data, model it for forecasting purposes, and add some other predictors to the modeling to sharpen our results.
+
+
+# Data Cleaning and Data Choice
+
+Here is how we cleaned and refined the data so that it can easily be used for our analysis. After working on different subjects such as *Net Income* trend and *Net Sales* trend, we decided to choose the *Net Sales* data series for our analysis. You can see these different results in the following code section.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+wal_entire <- read.csv("Walmart Quarterly-Data.csv")
+amz_entire <- read.csv("Amazon Quarterly-Data.csv")
+exx_entire <- read.csv("Exxon Quarterly-Data.csv")
+
+wal_cut <- wal_entire[c(5,6), -1]
+amz_cut <- amz_entire[c(5,8), -1]
+exx_cut <- exx_entire[c(5,6), -1]
+
+wal <- t(wal_cut) %>% 
+          as.tibble(rownames = NULL)
+
+colnames(wal) = c("Quarters_ended", "Net_Sales")
+write.csv(wal, "Walmart.csv")
+
+amz <- t(amz_cut) %>% 
+         as.tibble(rownames = NULL)
+
+colnames(amz) = c("Quarters_ended", "Net_Sales")
+write.csv(amz, "amazon.csv")
+
+exx <- t(exx_cut) %>% 
+        as.tibble(rownames = NULL)
+
+colnames(exx) = c("Quarters_ended", "Sales")
+write.csv(exx, "exxon.csv")
+
+
+wal <- read_csv("walmart", 
+                col_types = cols(Quarters_ended = col_character(), 
+                                 X1 = col_skip()))
+
+wal_d <- as.character(wal$Quarters_ended) %>%
+            parse_date(format = "%b %d, %Y") 
+
+wal <- mutate(wal, Quarters_ended = wal_d) %>%
+        arrange(Quarters_ended)
+
+amz <- read_csv("amazon", 
+                col_types = cols(Quarters_ended = col_character(), 
+                                 X1 = col_skip()))
+amz_d <- as.character(amz$Quarters_ended) %>%
+  parse_date(format = "%b %d, %Y") 
+
+amz <- mutate(amz, Quarters_ended = amz_d) %>%
+  arrange(Quarters_ended)
+
+exx <- read_csv("exxon", 
+                col_types = cols(Quarters_ended = col_character(), 
+                                 X1 = col_skip()))
+exx_d <- as.character(exx$Quarters_ended) %>%
+  parse_date(format = "%b %d, %Y") 
+
+exx <- mutate(exx, Quarters_ended = exx_d) %>%
+  arrange(Quarters_ended)
+
+ggplot(wal, aes(Quarters_ended, Net_Sales)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Net Sales") + 
+  ggtitle("Walmart")
+
+ggplot(amz, aes(Quarters_ended, Net_Sales)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Net Sales") +
+  ggtitle("Amazon")
+
+ggplot(exx, aes(Quarters_ended, Sales)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Sales")  +
+  ggtitle("Exxon")
+
+```
+
+From the visualizations, we found Amazon more intuitive and more interesting to study. The next point was to look at the *net income* and choose which data would be more interesting to study and how possibly useful it could be for potential future investors. 
+
+```{r message=FALSE, warning=FALSE}
+colname <- amz_entire[5:24, 1]
+amazon_cleaned <- amz_entire[-c(1:4, 25), -1] %>%
+                    t() %>%
+                      as_tibble(rownames = NULL)
+
+colnames(amazon_cleaned) <- colname
+
+amazon_cleaned$`3 months ended` <- as.character(amazon_cleaned$`3 months ended`) %>%
+                                     parse_date(format = "%b %d, %Y")
+
+amazon_cleaned $quarters_ended = amazon_cleaned$`3 months ended`
+
+amazon_cleaned <- amazon_cleaned[c(1, 21, 2:20)]
+amazon_cleaned <- amazon_cleaned[-1]
+
+amazon_used <- amazon_cleaned[c(1, 20, 4, 12, 8, 9)]
+
+amazon_used$`Net income (loss)`[c(18,20,21)] <- c("-57", "-437", "-126")
+
+amazon_used$`Operating income (loss)`[c(20,21)] <- c("-544", "-15")
+
+
+colnames(amazon_used) <- c("quarters_ended", "net_income", "net_sales", "operating_income",
+                           "marketing_exp", "technology_exp")
+
+amazon_used <- mutate(amazon_used, marketing_exp = str_remove_all(marketing_exp, "[())]"))
+
+amazon_used <- mutate(amazon_used, technology_exp = str_remove_all(technology_exp, "[())]"))
+
+
+amazon_used$net_income <- parse_number(amazon_used$net_income)
+amazon_used$net_sales <- parse_number(amazon_used$net_sales)
+amazon_used$operating_income <- parse_number(amazon_used$operating_income)
+amazon_used$marketing_exp <- parse_number(amazon_used$marketing_exp)
+amazon_used$technology_exp <- parse_number(amazon_used$technology_exp)
+summary(amazon_used)
+glimpse(amazon_used)
+
+
+ggplot(amazon_used, aes(quarters_ended, net_income)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Net Income") +
+  ggtitle("Amazon")
+
+means <- c(mean(amazon_used$net_income), mean(amazon_used$net_sales),
+           mean(amazon_used$operating_income))
+
+sds <- c(sd(amazon_used$net_income), sd(amazon_used$net_sales), sd(amazon_used$operating_income))
+
+
+norm_log_amz_used <- tibble(.rows = 22)
+
+for(i in 1:3)
+{
+  for(j in 1:22)
+  {
+    norm_log_amz_used[j, i] <- log(2 + ((amazon_used[j, i+1] - means[i]) / sds[i]))
+  }
+}
+
+norm_log_amz_used$quarters_ended <- amazon_used$quarters_ended
+norm_log_amz_used <- norm_log_amz_used[c(4, 1:3)]
+
+ggplot(norm_log_amz_used, aes(quarters_ended, net_income)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Normalized Net Income") +
+  ggtitle("Amazon")
+
+
+norm_sqrt_amz_used <- tibble(.rows = 22)
+
+for(i in 1:3)
+{
+  for(j in 1:22)
+  {
+    if(amazon_used[j, i+1] < 0)
+    {
+      norm_sqrt_amz_used[j, i] <- -sqrt(abs(amazon_used[j, i+1]))
+    } else{
+      norm_sqrt_amz_used[j, i] <- sqrt(amazon_used[j, i+1])
+    }
+  }
+}
+
+norm_sqrt_amz_used$quarters_ended <- amazon_used$quarters_ended
+norm_sqrt_amz_used <- norm_sqrt_amz_used[c(4, 1:3)]
+
+ggplot(norm_sqrt_amz_used, aes(quarters_ended, net_income)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Net Income Sqrt") +
+  ggtitle("Amazon")
+
+
+
+norm_log_sqrt_amz_used <- tibble(.rows = 22)
+
+for(i in 1:3)
+{
+  for(j in 1:22)
+  {
+    if(norm_log_amz_used[j, i+1] < 0)
+    {
+      norm_log_sqrt_amz_used[j, i] <- -sqrt(abs(norm_log_amz_used[j, i+1]))
+    } else{
+      norm_log_sqrt_amz_used[j, i] <- sqrt(norm_log_amz_used[j, i+1])
+    }
+  }
+}
+
+norm_log_sqrt_amz_used$quarters_ended <- amazon_used$quarters_ended
+norm_log_sqrt_amz_used <- norm_log_sqrt_amz_used[c(4, 1:3)]
+
+ggplot(norm_log_sqrt_amz_used, aes(quarters_ended, net_income)) +  geom_point() +
+  geom_line() + xlab("Quarters Ended") + ylab("Net Income Log_Sqrt") +
+  ggtitle("Amazon")
+```
+The trend from the Amazon net income does not look as interesting as the net sales did, and it looked more complicated for our analysis purposes. The final data we will work on then is the Amazon *Net Sales*.
+
+
+# Data Modeling 
+
+## Times Series Data Modeling
+
+### Data Decomposition
+
+As you have seen previously, Amazon's net sales looks having an increasing trend and also a seasonal one. Given this characteristic, we can decompose our data into a time series object using the `ts` function.
+
+```{r message=FALSE, warning=FALSE}
+amz <- arrange(amazon_used, quarters_ended) [-c(1,2,4,5,6)]
+amz_ts <- ts(amz, start = c(2014, 1), end = c(2019, 2), frequency = 4)
+amz_ts
+
+dec_amz_ts <- stats::decompose(amz_ts)
+dec_amz_ts
+
+plot(dec_amz_ts)
+```
+
+
+### Data Transformation
+
+The blue line indicating the optimal lag value hits the correlation bar for most cases at `lag = 4`. This means that the best value that can be used to predict the net sales value of a quarter is the value of the same quarter from the previous year. That makes sense because of the seasonality pattern.
+
+```{r warning=FALSE, message=FALSE}
+amz_sub <- arrange(amazon_used, quarters_ended)[-c(2,4,5,6)]
+amz_log <- mutate(amz_sub, net_sales = log(net_sales))
+plot(amz_log)
+
+amz_sqrt <- mutate(amz_sub, net_sales = sqrt(abs(net_sales)))
+plot(amz_sqrt)
+
+amz_sqrt_log <- mutate(amz_sub, net_sales = log(sqrt(abs(net_sales))))
+plot(amz_sqrt_log)
+
+acf(amz_sub)
+acf(amz_log)
+acf(amz_sqrt)
+acf(amz_sqrt_log)
+acf(dec_amz_ts$seasonal)
+```
+
+## Regression Modeling
+
+### Times Series Models
+
+After visualizing how our data is behaving, we will try to fit a model that would help us be more accurate in forecasting the future quarters net sales. For that, we will try to fit multiple models and retain the one with the least error. 
+
+```{r message=FALSE, warning=FALSE}
+amztr <- amz[1:18,]
+amz_ar1 <- arima(amztr, order = c(1, 0, 0), seasonal = list(order = c(1, 0, 0)))
+amz_ar2 <- arima(amztr, order = c(2, 0, 0), seasonal = list(order = c(2, 0, 0)))
+amz_ar3 <- arima(amztr, order = c(3, 0, 0), seasonal = list(order = c(3, 0, 0)))
+amz_ar4 <- arima(amztr, order = c(4, 0, 0), seasonal = list(order = c(4, 0, 0)))
+
+AIC(amz_ar1, amz_ar2, amz_ar3, amz_ar4)
+
+amz_ma1 <- arima(amztr, order = c(0, 0, 1), seasonal = list(order = c(0, 0, 1)))
+amz_ma2 <- arima(amztr, order = c(0, 0, 2), seasonal = list(order = c(0, 0, 2)))
+amz_ma3 <- arima(amztr, order = c(0, 0, 3), seasonal = list(order = c(0, 0, 3)))
+amz_ma4 <- arima(amztr, order = c(0, 0, 4), seasonal = list(order = c(0, 0, 4)))
+
+AIC(amz_ma1, amz_ma2, amz_ma3, amz_ma4)
+
+amz_arma104 <- arima(amztr, order = c(1, 0, 4), seasonal = list(order = c(1, 0, 4)))
+amz_arma204 <- arima(amztr, order = c(2, 0, 4), seasonal = list(order = c(2, 0, 4)))
+amz_arma304 <- arima(amztr, order = c(3, 0, 4), seasonal = list(order = c(3, 0, 4)))
+amz_arma404 <- arima(amztr, order = c(4, 0, 4), seasonal = list(order = c(4, 0, 4)))
+
+AIC(amz_arma104, amz_arma204, amz_arma304, amz_arma404)
+```
+
+
+After our modeling phase, we will use the automatic version of `arima` function that is `auto.arima`. Using this function, we end up the auto-regressive model with order 1 (ARIMA(1,0,0)). This result is different than the step-by-step modeling process result, so which one will be optimal for our case? Apparently, the default model gives a further prediction from the actual value.
+
+```{r message=FALSE, warning=FALSE}
+library(forecast)
+
+amz_model <- auto.arima(amztr, d = 0, D = 0, max.P = 4, max.Q = 4, start.P = 0, start.Q = 0,
+                        max.p = 4, max.q = 4, start.p = 0, start.q = 0, max.order = 12, stepwise = F)
+
+forecast(amz_model, h = 5)
+plot(forecast(amz_model, h = 5))
+forecast(amz_arma304, h = 5)
+plot(forecast(amz_arma304, h = 5))
+```
+
+
+### Dynamic Regression Models
+
+
+Using the dynamic regression models, we are integrating the marketing expenses and the technology expenses to observe how each of them could improve our predictions. 
+
+
+```{r message=FALSE, warning=FALSE}
+amz_used <- amazon_used[1:18,]
+
+dyn_mod <- auto.arima(amz_used$net_sales, xreg = stats::lag(amz_used$marketing_exp, k = 1))
+summary(dyn_mod)
+
+forecast(dyn_mod,  xreg = stats::lag(amazon_used$marketing_exp[18:22], k = 1))
+plot(forecast(dyn_mod,  xreg = amazon_used$marketing_exp[18:22]))
+
+dyn_mod1 <- auto.arima(amz_used$net_sales, xreg = lag(amz_used$technology_exp, k = 1))
+summary(dyn_mod1)
+
+forecast(dyn_mod1, xreg = amazon_used$technology_exp[18:22])
+plot(forecast(dyn_mod1, xreg = amazon_used$technology_exp[18:22]))
+
+dyn_mod2 <- arima(amz_used$net_sales, order = c(3, 0, 4), seasonal = list(order = c(3, 0, 4)),
+                  xreg = stats::lag(amz_used$marketing_exp, k = 1))
+summary(dyn_mod2)
+
+predict(dyn_mod2, newxreg = amazon_used$marketing_exp[18:22])
+
+dyn_mod3 <- arima(amz_used$net_sales, order = c(3, 0, 4), seasonal = list(order = c(3, 0, 4)),
+                  xreg = stats::lag(amz_used$technology_exp, k = 1))
+summary(dyn_mod3)
+
+predict(dyn_mod3, newxreg = amazon_used$technology_exp[18:22])
+
+```
+
+
+| Date       | Actual data | auto arima | arima304 | auto arima with marketing exp | auto arima with technology exp | arima304 with marketing exp | arima304 with technology exp |
+|------------|-------------|------------|----------|-------------------------------|--------------------------------|-----------------------------|------------------------------|
+| 09/30/18 | 56576       | 50109.68   | 56581.65 | 23884.11                      | 20725.61                       | 24778.22                    | 25834.83                     |
+| 12/31/18 | 72383       | 47762.77   | 73852.31 | 30130.30                      | 19830.06                       | 31277.47                    | 24938.98                     |
+| 03/31/19 | 59700       | 45778.84   | 63769.56 | 23775.21                      | 18234.63                       | 23457.83                    | 23343.00                     |
+| 06/30/19 | 63404       | 44101.76   | 65580.17 | 23352.46                      | 16752.08                       | 22724.28                    | 21859.95                     |
+| 09/30/19 | 69981       | 42684.06   | 68636.95 | 22548.55                      | 14983.55                       | 21653.29                    | 20090.83                     |
+
+
+# Conclusion
+
+In summary, the increasing and seasonal trends of Amazon's net sales over time fit best to the auto-regressive integrated moving average model with order (3, 0, 4). this model's results were in average much closer to the predicted values than the other models. Using the marketing expenses or the technology expenses was making the predictions even worse: **the simpler the model, the better the predictions** in our case. The last point to remember in this analysis is not to ignore the manual or step-wise method of choosing a fitting model, it is very useful for model choice justification.
