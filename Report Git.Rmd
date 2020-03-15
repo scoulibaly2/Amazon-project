@@ -2,8 +2,10 @@
 title: 'Amazon: Net Sales Forecasting'
 author: "Siata Coulibaly"
 date: "1/14/2020"
-output:
-  html_document
+output: 
+  html_document :
+    toc: true
+    number_sections: true
 ---
 
 
